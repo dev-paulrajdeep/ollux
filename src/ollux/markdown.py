@@ -13,6 +13,9 @@ _FENCE_RE = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 
+# Inline code: one or more backticks, matching closer
+_INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\1).)+)\1(?!`)")
+
 # Obvious think wrappers (common in some local models)
 _THINK_RE = re.compile(
     r"<think>\s*.*?\s*</think\s*>",
@@ -23,42 +26,54 @@ _THINK_ALT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-_PLACEHOLDER = "\x00OLLUX_CODE_{i}\x00"
+_CODE_PLACEHOLDER = "\x00OLLUXCODE«{i}»\x00"
 
 
 def normalize_markdown(text: str, *, math_mode: str = "unicode") -> str:
     """
     Deterministic local cleanup. Does not paraphrase, summarize,
-    reorder, or alter code fence contents.
+    reorder, or alter code fence / inline-code contents.
+
+    Pipeline:
+      protect code → strip think → math (unicode) → whitespace → unescape → restore
     """
     if not text:
         return ""
 
-    protected, fences = _protect_fences(text)
+    protected, chunks = _protect_code(text)
     protected = _strip_think_blocks(protected)
+    # Math before general whitespace so delimiter scanning sees original lines
+    protected = convert_math(protected, mode=math_mode)
     protected = _normalize_whitespace(protected)
     protected = _unescape_common(protected)
-    protected = convert_math(protected, mode=math_mode)
-    restored = _restore_fences(protected, fences)
+    restored = _restore_code(protected, chunks)
     return restored.strip() + ("\n" if restored.strip() else "")
 
 
-def _protect_fences(text: str) -> tuple[str, list[str]]:
-    fences: list[str] = []
+def _protect_code(text: str) -> tuple[str, list[str]]:
+    """Protect fenced blocks first, then inline code. Restore exactly later."""
+    chunks: list[str] = []
 
-    def repl(m: re.Match[str]) -> str:
-        prefix = m.group(1)
-        block = m.group(2)
-        idx = len(fences)
-        fences.append(block)
-        return f"{prefix}{_PLACEHOLDER.format(i=idx)}"
+    def keep(block: str) -> str:
+        idx = len(chunks)
+        chunks.append(block)
+        return _CODE_PLACEHOLDER.format(i=idx)
 
-    return _FENCE_RE.sub(repl, text), fences
+    def fence_repl(m: re.Match[str]) -> str:
+        return f"{m.group(1)}{keep(m.group(2))}"
+
+    text = _FENCE_RE.sub(fence_repl, text)
+
+    def inline_repl(m: re.Match[str]) -> str:
+        return keep(m.group(0))
+
+    text = _INLINE_CODE_RE.sub(inline_repl, text)
+    return text, chunks
 
 
-def _restore_fences(text: str, fences: list[str]) -> str:
-    for i, block in enumerate(fences):
-        text = text.replace(_PLACEHOLDER.format(i=i), block)
+def _restore_code(text: str, chunks: list[str]) -> str:
+    for i, block in enumerate(chunks):
+        text = text.replace(_CODE_PLACEHOLDER.format(i=i), block)
     return text
 
 
@@ -69,13 +84,9 @@ def _strip_think_blocks(text: str) -> str:
 
 
 def _normalize_whitespace(text: str) -> str:
-    # Normalize newlines
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    # Strip trailing spaces/tabs per line
     text = re.sub(r"[ \t]+\n", "\n", text)
-    # Collapse 3+ blank lines to 2
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Trim leading blank lines
     text = text.lstrip("\n")
     return text
 
