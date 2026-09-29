@@ -81,7 +81,7 @@ def _normalize_whitespace(text: str) -> str:
 
 
 def _unescape_common(text: str) -> str:
-    """
+    r"""
     Undo a few accidental Markdown escapes outside code.
     Conservative: only clear \ before punctuation that models over-escape.
     """

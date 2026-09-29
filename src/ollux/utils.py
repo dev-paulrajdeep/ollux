@@ -30,9 +30,16 @@ def eprint(*args: object, **kwargs: object) -> None:
 
 def read_stdin_if_piped() -> str | None:
     """Return stdin text when not a TTY; otherwise None."""
-    if sys.stdin.isatty():
+    try:
+        if sys.stdin.isatty():
+            return None
+    except OSError:
         return None
-    data = sys.stdin.read()
+    try:
+        data = sys.stdin.read()
+    except OSError:
+        # e.g. pytest capture stub that forbids reads
+        return None
     if not data:
         return None
     return data.rstrip("\n")

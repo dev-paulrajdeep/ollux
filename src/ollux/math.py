@@ -95,19 +95,20 @@ def convert_math(text: str, mode: str = "unicode") -> str:
 
 
 def _convert_unicode(text: str) -> str:
-    # Simple sqrt before frac / commands so nested forms stay conservative
+    # Commands first so simple \frac{\alpha}{b} can become α/b safely.
+    text = _CMD_RE.sub(lambda m: _SIMPLE_CMDS[m.group(0)], text)
     text = _SQRT_RE.sub(lambda m: "√" + m.group(1), text)
 
     def frac_sub(m: re.Match[str]) -> str:
         a, b = m.group(1).strip(), m.group(2).strip()
-        # Skip if either side still looks like complex TeX
-        if "\\" in a or "\\" in b or " " in a or " " in b:
-            if "\\" in a or "\\" in b:
-                return m.group(0)  # uncertain — leave alone
+        # Uncertain / cascading forms — leave alone
+        if "\\" in a or "\\" in b or "/" in a or "/" in b:
+            return m.group(0)
+        if len(a) > 32 or len(b) > 32:
+            return m.group(0)
         return f"{a}/{b}"
 
     text = _FRAC_RE.sub(frac_sub, text)
-    text = _CMD_RE.sub(lambda m: _SIMPLE_CMDS[m.group(0)], text)
 
     # Unwrap simple \(...\) / \[...\] after conversion (content already unicode)
     text = _INLINE_WRAP_RE.sub(r"\1", text)
