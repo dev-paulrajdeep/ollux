@@ -25,6 +25,14 @@ METRICS = (
 )
 
 
+def _find_running_model(models: list[dict[str, Any]], model: str) -> dict[str, Any] | None:
+    for item in models:
+        name = item.get("name") or item.get("model")
+        if name == model or (isinstance(name, str) and name.startswith(model + ":")):
+            return item
+    return None
+
+
 def summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
     """Return median/min/max for each metric over valid benchmark runs."""
     summary: dict[str, Any] = {}
@@ -134,7 +142,7 @@ def benchmark(
     progress: Callable[[str], None] = eprint,
 ) -> dict[str, Any]:
     before = client.running_models()
-    resident = next((item for item in before if item.get("name", item.get("model")) == model), None)
+    resident = _find_running_model(before, model)
     cold_start_s: float | None = None
     results: list[dict[str, Any]] = []
     settings = {"model": model, "prompt": prompt, "runs": runs, "warmup": warmup, "num_predict": num_predict, "seed": seed, "temperature": temperature}
@@ -174,7 +182,7 @@ def benchmark(
 
     after = client.running_models()
     gpu = gpu_info()
-    ps_model = next((item for item in after if item.get("name", item.get("model")) == model), None)
+    ps_model = _find_running_model(after, model)
     ps_info = None
     if ps_model is not None:
         size = ps_model.get("size")

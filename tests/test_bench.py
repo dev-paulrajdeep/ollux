@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from ollux.bench import benchmark, run_once, summarize
+from ollux.bench import _find_running_model, benchmark, run_once, summarize
 from ollux.cli import build_parser, main
 from ollux.ollama import OllamaClient
 from ollux.utils import OlluxError
@@ -97,6 +97,11 @@ def test_median_odd_even():
     assert summarize(runs)["gen_tok_s"] == {"median": 30, "min": 10, "max": 50}
     even = [{"valid": True, "gen_tok_s": v} for v in [10, 20, 50, 100]]
     assert summarize(even)["gen_tok_s"]["median"] == 35
+
+
+def test_ps_matches_short_model_name():
+    models = [{"name": "qwen3:8b", "size": 100, "size_vram": 100}]
+    assert _find_running_model(models, "qwen3") is models[0]
 
 
 def test_ttft_includes_server_delay(mock_server):
