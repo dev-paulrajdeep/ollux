@@ -159,6 +159,32 @@ class OllamaClient:
         finally:
             resp.close()
 
+    def running_models(self) -> list[dict[str, Any]]:
+        """Return models currently resident in Ollama (``/api/ps``)."""
+        data = self._request("GET", "/api/ps")
+        return list(data.get("models") or [])
+
+    def generate_stream(self, body: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Yield decoded NDJSON events from Ollama's streaming ``/api/generate``."""
+        resp = self._request("POST", "/api/generate", body, stream=True)
+        try:
+            while True:
+                line = resp.readline()
+                if not line:
+                    break
+                line = line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if err := event.get("error"):
+                    raise OlluxError(str(err))
+                yield event
+        finally:
+            resp.close()
+
 
 SYSTEM_PROMPT = """\
 You are a precise local assistant. Answer in clean GitHub-Flavored Markdown.
