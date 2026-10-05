@@ -159,10 +159,17 @@ class OllamaClient:
         finally:
             resp.close()
 
+    def ps_data(self) -> dict[str, Any]:
+        """Return the decoded response from Ollama's ``/api/ps`` endpoint."""
+        data = self._request("GET", "/api/ps")
+        if not isinstance(data, dict):
+            raise OlluxError("Ollama returned an invalid /api/ps response")
+        return data
+
     def running_models(self) -> list[dict[str, Any]]:
         """Return models currently resident in Ollama (``/api/ps``)."""
-        data = self._request("GET", "/api/ps")
-        return list(data.get("models") or [])
+        models = self.ps_data().get("models")
+        return models if isinstance(models, list) else []
 
     def generate_stream(self, body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         """Yield decoded NDJSON events from Ollama's streaming ``/api/generate``."""

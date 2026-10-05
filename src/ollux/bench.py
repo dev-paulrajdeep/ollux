@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ollux.ollama import OllamaClient
+from ollux.ps import offload
 from ollux.utils import OlluxError, eprint
 
 DEFAULT_PROMPT = "In one concise paragraph, explain why the sky appears blue."
@@ -187,12 +188,13 @@ def benchmark(
     if ps_model is not None:
         size = ps_model.get("size")
         size_vram = ps_model.get("size_vram")
-        offload = None
+        offload_fraction = None
         if isinstance(size, (int, float)) and size > 0 and isinstance(size_vram, (int, float)):
-            offload = 1 - size_vram / size
-        ps_info = {"model": ps_model.get("name", ps_model.get("model")), "size": size, "size_vram": size_vram, "offload_pct": offload}
-        if offload is not None and size_vram < size:
-            progress(f"Warning: {offload:.1%} of the model is on CPU; generation speed will drop.")
+            split = offload(size, size_vram)
+            offload_fraction = split["cpu_pct"] / 100 if split["cpu_pct"] is not None else None
+        ps_info = {"model": ps_model.get("name", ps_model.get("model")), "size": size, "size_vram": size_vram, "offload_pct": offload_fraction}
+        if offload_fraction is not None and size_vram < size:
+            progress(f"Warning: {offload_fraction:.1%} of the model is on CPU; generation speed will drop.")
     if gpu is None:
         progress("gpu stats unavailable")
     valid_count = sum(bool(item.get("valid")) for item in results)
