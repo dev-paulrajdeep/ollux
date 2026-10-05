@@ -8,3 +8,4 @@ build/
 *.md.bak
 .coverage
 htmlcov/
+.cursor
