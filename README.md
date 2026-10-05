@@ -112,6 +112,7 @@ ollux ornith-1.5:9b
 | `ollux <model> "<prompt>"` | One-shot |
 | `ollux --model <model> "<prompt>"` | Explicit model (always unambiguous) |
 | `ollux --list` | List installed models |
+| `ollux --ps` | Show loaded model memory residency and optional GPU status |
 | `ollux --raw …` | Print raw model text (no normalization) |
 | `ollux --markdown …` | Normalized Markdown only; **no** terminal renderer |
 | `ollux --no-render …` | Skip glow; print Markdown |
@@ -161,6 +162,7 @@ Commands:
 | `/help` | Show commands |
 | `/model [name]` | Show or switch model |
 | `/models` | List installed models |
+| `/ps` | Show loaded model memory residency and optional GPU telemetry |
 | `/raw` | Toggle raw output |
 | `/render` | Toggle terminal rendering |
 | `/save <file>` | Save last assistant reply as Markdown |
@@ -334,6 +336,10 @@ The default prompt is fixed so results are comparable; a positional prompt or pi
 The memory section reports model size, VRAM-resident size, and estimated offload percentage from `/api/ps`. If `nvidia-smi` is available, GPU name, memory, power, and temperature are included. The JSON object contains settings, each measured run, median/min/max summaries, `/api/ps` information, and GPU information (`null` when unavailable).
 
 The median is the headline statistic because an occasional slow run can skew the mean. Warmup runs are discarded because they include initial model loading and cache effects. Results still depend on thermals, power mode, and background GPU load; record those conditions when publishing benchmark numbers.
+
+## GPU and memory status
+
+Use `/ps` during an interactive session or `ollux --ps` to see each loaded model's total size, VRAM use, CPU spill, GPU/CPU split, context length, and time until unload. `ollux --ps --json` emits the same model split and optional device data as JSON. Offload means the portion of the model memory not resident in VRAM. Partial offload can slow generation because some model layers run on the CPU; lowering context length or using a smaller or more heavily quantized model may help. Models can disappear after Ollama's keep-alive period and load again on the next prompt. Model memory and split figures come from Ollama's own `/api/ps` accounting; optional device-level GPU readings come from `nvidia-smi`.
 
 Manual smoke (with Ollama running):
 

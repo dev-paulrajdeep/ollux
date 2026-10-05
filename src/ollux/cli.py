@@ -12,6 +12,7 @@ from ollux.bench import DEFAULT_PROMPT, benchmark, print_human, print_json
 from ollux.markdown import normalize_markdown
 from ollux.obsidian import save_obsidian_note
 from ollux.ollama import SYSTEM_PROMPT, OllamaClient
+from ollux.ps import show_status
 from ollux.renderer import render_markdown
 from ollux.setup import run_setup
 from ollux.utils import (
@@ -73,13 +74,14 @@ examples:
     p.add_argument("prompt", nargs="?", help="prompt (when model is first)")
     p.add_argument("--model", "-m", dest="model_flag", help="explicit model name")
     p.add_argument("--list", "-l", action="store_true", help="list installed models")
+    p.add_argument("--ps", action="store_true", help="show loaded model GPU/CPU memory status")
     p.add_argument("--bench", action="store_true", help="benchmark local model inference")
     p.add_argument("--runs", type=_positive_int, default=5, help="measured benchmark runs (default: 5)")
     p.add_argument("--warmup", type=_nonnegative_int, default=1, help="discarded warmup runs (default: 1)")
     p.add_argument("--num-predict", type=_positive_int, default=256, help="tokens to generate per run (default: 256)")
     p.add_argument("--seed", type=_nonnegative_int, default=0, help="generation seed (default: 0)")
     p.add_argument("--temperature", type=_nonnegative_float, default=0.0, help="generation temperature (default: 0)")
-    p.add_argument("--json", action="store_true", help="emit benchmark results as JSON")
+    p.add_argument("--json", action="store_true", help="emit --bench or --ps output as JSON")
     p.add_argument(
         "--raw", action="store_true", help="print raw model output (no normalization)"
     )
@@ -155,6 +157,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         return cmd_list(client)
+
+    if args.ps:
+        try:
+            show_status(client, json_output=args.json)
+            return 0
+        except OlluxError as exc:
+            return _fail(exc)
 
     if args.bench:
         model = args.model_flag or cfg.default_model
@@ -488,6 +497,7 @@ def _handle_slash(
 /help              show this help
 /model [name]      show or switch model
 /models            list installed models
+/ps                show loaded model GPU/CPU memory status
 /raw               toggle raw output
 /render            toggle terminal rendering
 /save <file>       save last assistant reply as Markdown
@@ -508,6 +518,13 @@ def _handle_slash(
     if cmd == "/models":
         for name in client.list_models(refresh=True):
             print(name)
+        return True, model, math_mode, raw_mode, render_on, messages
+
+    if cmd == "/ps":
+        try:
+            show_status(client)
+        except OlluxError as exc:
+            eprint(f"error: {exc}")
         return True, model, math_mode, raw_mode, render_on, messages
 
     if cmd == "/raw":
