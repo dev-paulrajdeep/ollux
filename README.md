@@ -313,6 +313,28 @@ pytest
 
 Unit tests **do not** require a live Ollama server. They cover math, Markdown/fences, config precedence, filenames, Obsidian output, CLI parsing, stdin, ANSI stripping, and connection errors.
 
+## Benchmarking
+
+Run a repeatable local inference benchmark with the configured default model, or choose one explicitly:
+
+```bash
+ollux --bench
+ollux --bench --model qwen3:8b "Explain why the sky is blue."
+ollux --bench --model qwen3:8b --runs 7 --warmup 2 --num-predict 256 --json > benchmark.json
+```
+
+The default prompt is fixed so results are comparable; a positional prompt or piped stdin can override it. The report includes:
+
+- `ttft_s`: wall time from sending the request to the first non-empty generated text.
+- `gen_tok_s` / `prompt_tok_s`: generated and prompt tokens per second, calculated from Ollama's evaluation counts and durations.
+- `load_s` / `total_s`: model load and full request durations reported by Ollama.
+- `eval_count` / `prompt_eval_count`: generated and processed prompt token counts.
+- `cold_start_s`: wall time for the first request, only when `/api/ps` shows that the model was not already resident.
+
+The memory section reports model size, VRAM-resident size, and estimated offload percentage from `/api/ps`. If `nvidia-smi` is available, GPU name, memory, power, and temperature are included. The JSON object contains settings, each measured run, median/min/max summaries, `/api/ps` information, and GPU information (`null` when unavailable).
+
+The median is the headline statistic because an occasional slow run can skew the mean. Warmup runs are discarded because they include initial model loading and cache effects. Results still depend on thermals, power mode, and background GPU load; record those conditions when publishing benchmark numbers.
+
 Manual smoke (with Ollama running):
 
 ```bash

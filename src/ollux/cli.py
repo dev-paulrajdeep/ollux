@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ollux import __version__
 from ollux.config import Config, ConfigError, load_config, merge_cli
+from ollux.bench import DEFAULT_PROMPT, benchmark, print_human, print_json
 from ollux.markdown import normalize_markdown
 from ollux.obsidian import save_obsidian_note
 from ollux.ollama import SYSTEM_PROMPT, OllamaClient
@@ -20,6 +21,36 @@ from ollux.utils import (
     read_stdin_if_piped,
     write_markdown_file,
 )
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def _nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be 0 or greater")
+    return parsed
+
+
+def _nonnegative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be 0 or greater")
+    return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +73,13 @@ examples:
     p.add_argument("prompt", nargs="?", help="prompt (when model is first)")
     p.add_argument("--model", "-m", dest="model_flag", help="explicit model name")
     p.add_argument("--list", "-l", action="store_true", help="list installed models")
+    p.add_argument("--bench", action="store_true", help="benchmark local model inference")
+    p.add_argument("--runs", type=_positive_int, default=5, help="measured benchmark runs (default: 5)")
+    p.add_argument("--warmup", type=_nonnegative_int, default=1, help="discarded warmup runs (default: 1)")
+    p.add_argument("--num-predict", type=_positive_int, default=256, help="tokens to generate per run (default: 256)")
+    p.add_argument("--seed", type=_nonnegative_int, default=0, help="generation seed (default: 0)")
+    p.add_argument("--temperature", type=_nonnegative_float, default=0.0, help="generation temperature (default: 0)")
+    p.add_argument("--json", action="store_true", help="emit benchmark results as JSON")
     p.add_argument(
         "--raw", action="store_true", help="print raw model output (no normalization)"
     )
@@ -117,6 +155,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         return cmd_list(client)
+
+    if args.bench:
+        model = args.model_flag or cfg.default_model
+        prompt = args.prompt or args.model_or_prompt or DEFAULT_PROMPT
+        piped = read_stdin_if_piped()
+        if piped:
+            prompt = f"{prompt}\n{piped}" if prompt != DEFAULT_PROMPT else piped
+        if not model:
+            return _fail(OlluxError("no model specified; pass --model or set default_model in config"))
+        try:
+            result = benchmark(
+                client, model, prompt, runs=args.runs, warmup=args.warmup,
+                num_predict=args.num_predict, seed=args.seed, temperature=args.temperature,
+            )
+        except OlluxError as exc:
+            return _fail(exc)
+        (print_json if args.json else print_human)(result)
+        return 130 if result["interrupted"] else 0
 
     try:
         model, prompt, interactive = resolve_model_and_prompt(args, cfg, client)
