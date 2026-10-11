@@ -19,6 +19,7 @@ from ollux.utils import (
     looks_like_model_name,
     read_stdin_if_piped,
     write_markdown_file,
+    Spinner,
 )
 
 
@@ -265,19 +266,41 @@ def run_oneshot(
 
     print(f"Ollux · {model}", file=sys.stderr)
 
-    if args.live and not args.save and not args.obsidian and not args.markdown:
-        # Stream directly; minimal/no normalization
-        for chunk in client.chat(model, messages, stream=True):
-            sys.stdout.write(chunk)
-            sys.stdout.flush()
-        sys.stdout.write("\n")
-        return 0
+    # Handle spinner
+    spinner = None
+    if getattr(cfg, "show_spinner", True) and not args.raw and not args.markdown and sys.stderr.isatty():
+        spinner = Spinner(message="Waiting")
+        spinner.start()
 
-    # Default: collect → normalize → render/save once
-    parts: list[str] = []
-    for chunk in client.chat(model, messages, stream=True):
-        parts.append(chunk)
-    raw = "".join(parts)
+    try:
+        if args.live and not args.save and not args.obsidian and not args.markdown:
+            # Stream directly; minimal/no normalization
+            first = True
+            for chunk in client.chat(model, messages, stream=True):
+                if first and spinner:
+                    spinner.stop()
+                    first = False
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
+            if spinner and first:
+                spinner.stop()
+            sys.stdout.write("\n")
+            return 0
+
+        # Default: collect → normalize → render/save once
+        parts: list[str] = []
+        first = True
+        for chunk in client.chat(model, messages, stream=True):
+            if first and spinner:
+                spinner.stop()
+                first = False
+            parts.append(chunk)
+        if spinner and first:
+            spinner.stop()
+        raw = "".join(parts)
+    finally:
+        if spinner:
+            spinner.stop()
 
     if args.raw:
         text = raw if raw.endswith("\n") else raw + "\n"
@@ -375,17 +398,38 @@ def run_interactive(
             continue
 
         messages.append({"role": "user", "content": line})
+
+        spinner = None
+        if getattr(cfg, "show_spinner", True) and not raw_mode and render_on and sys.stderr.isatty():
+            spinner = Spinner(message="Waiting")
+            spinner.start()
+
         try:
             if args.live and not raw_mode:
                 parts: list[str] = []
+                first = True
                 for chunk in client.chat(model, messages, stream=True):
+                    if first and spinner:
+                        spinner.stop()
+                        first = False
                     sys.stdout.write(chunk)
                     sys.stdout.flush()
                     parts.append(chunk)
+                if spinner and first:
+                    spinner.stop()
                 sys.stdout.write("\n")
                 assistant = "".join(parts)
             else:
-                parts = list(client.chat(model, messages, stream=True))
+                parts = []
+                first = True
+                for chunk in client.chat(model, messages, stream=True):
+                    if first and spinner:
+                        spinner.stop()
+                        first = False
+                    parts.append(chunk)
+                if spinner and first:
+                    spinner.stop()
+
                 assistant = "".join(parts)
                 if raw_mode:
                     out = assistant if assistant.endswith("\n") else assistant + "\n"
@@ -401,6 +445,9 @@ def run_interactive(
             eprint(f"error: {exc}")
             messages.pop()  # remove failed user turn
             continue
+        finally:
+            if spinner:
+                spinner.stop()
 
         messages.append({"role": "assistant", "content": assistant})
 
@@ -435,6 +482,8 @@ def _handle_slash(
 /raw               toggle raw output
 /render            toggle terminal rendering
 /save <file>       save last assistant reply as Markdown
+/export <file>     export the entire conversation history as Markdown
+/history           print the current session messages
 /clear             clear conversation (keep system prompt)
 /system            show system prompt
 /quit              exit"""
@@ -479,6 +528,38 @@ def _handle_slash(
             eprint(f"error: {exc}")
             return True, model, math_mode, raw_mode, render_on, messages
         print(f"saved {path}")
+        return True, model, math_mode, raw_mode, render_on, messages
+
+    if cmd == "/history":
+        for i, msg in enumerate(messages):
+            role = msg.get("role")
+            if role == "system":
+                continue
+            content = msg.get("content", "")
+            print(f"\n--- {role.upper()} ---\n{content}")
+        return True, model, math_mode, raw_mode, render_on, messages
+
+    if cmd == "/export":
+        if not arg:
+            eprint("usage: /export <file.md>")
+            return True, model, math_mode, raw_mode, render_on, messages
+
+        lines = []
+        for msg in messages:
+            role = msg.get("role")
+            if role == "system":
+                continue
+            content = msg.get("content", "")
+            if not raw_mode and role == "assistant":
+                content = normalize_markdown(content, math_mode=math_mode)
+            lines.append(f"### {role.capitalize()}\n\n{content}\n")
+
+        try:
+            path = write_markdown_file(Path(arg), "\n".join(lines), force=args.force)
+        except OlluxError as exc:
+            eprint(f"error: {exc}")
+            return True, model, math_mode, raw_mode, render_on, messages
+        print(f"exported to {path}")
         return True, model, math_mode, raw_mode, render_on, messages
 
     if cmd == "/clear":

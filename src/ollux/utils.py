@@ -28,6 +28,53 @@ def eprint(*args: object, **kwargs: object) -> None:
     print(*args, file=sys.stderr, **kwargs)  # type: ignore[call-arg]
 
 
+class Spinner:
+    """A simple threaded text spinner."""
+
+    def __init__(self, message: str = "Waiting", delay: float = 0.1) -> None:
+        self.spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.delay = delay
+        self.message = message
+        self.running = False
+        self.thread = None
+
+    def _spin(self) -> None:
+        import time
+        import sys
+
+        i = 0
+        while self.running:
+            sys.stderr.write(f"\r{self.spinner_chars[i % len(self.spinner_chars)]} {self.message}...")
+            sys.stderr.flush()
+            time.sleep(self.delay)
+            i += 1
+
+    def start(self) -> None:
+        import threading
+        if self.running:
+            return
+        self.running = True
+        self.thread = threading.Thread(target=self._spin, daemon=True)
+        self.thread.start()
+
+    def stop(self) -> None:
+        import sys
+        if not self.running:
+            return
+        self.running = False
+        if self.thread:
+            self.thread.join()
+        sys.stderr.write("\r\033[K") # clear line
+        sys.stderr.flush()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
+
+
 def read_stdin_if_piped() -> str | None:
     """Return stdin text when not a TTY; otherwise None."""
     try:

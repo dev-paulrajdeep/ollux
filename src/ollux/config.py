@@ -27,6 +27,7 @@ class Config:
     stream: bool = True
     obsidian_directory: str = ""
     obsidian_math_mode: str = "latex"
+    show_spinner: bool = True
 
     @classmethod
     def defaults(cls) -> Config:
@@ -216,6 +217,9 @@ def validate_config(
     if not isinstance(cfg.stream, bool):
         raise ConfigError("stream must be a boolean")
 
+    if not isinstance(cfg.show_spinner, bool):
+        raise ConfigError("show_spinner must be a boolean")
+
     normalized = Config(
         default_model=default_model,
         host=host,
@@ -224,6 +228,7 @@ def validate_config(
         stream=bool(cfg.stream),
         obsidian_directory=obsidian_directory,
         obsidian_math_mode=obsidian_math_mode,
+        show_spinner=bool(cfg.show_spinner),
     )
     return normalized, warnings
 
