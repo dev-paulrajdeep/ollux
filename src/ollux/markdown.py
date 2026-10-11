@@ -16,6 +16,12 @@ _FENCE_RE = re.compile(
 # Inline code: one or more backticks, matching closer
 _INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\1).)+)\1(?!`)")
 
+# Inline HTML tags to protect (e.g., <kbd>, <sub>, <sup>), excluding think blocks
+_INLINE_HTML_RE = re.compile(r"(</?(?!think\b|thinking\b)[a-zA-Z][a-zA-Z0-9]*\b[^>]*>)")
+
+# Markdown tables to protect
+_TABLE_RE = re.compile(r"(^|\n)((\|[^\n]+\|\n)+)", re.MULTILINE)
+
 # Obvious think wrappers (common in some local models)
 _THINK_RE = re.compile(
     r"<think>\s*.*?\s*</think\s*>",
@@ -51,7 +57,7 @@ def normalize_markdown(text: str, *, math_mode: str = "unicode") -> str:
 
 
 def _protect_code(text: str) -> tuple[str, list[str]]:
-    """Protect fenced blocks first, then inline code. Restore exactly later."""
+    """Protect fenced blocks, then inline code, HTML, and tables. Restore exactly later."""
     chunks: list[str] = []
 
     def keep(block: str) -> str:
@@ -68,6 +74,14 @@ def _protect_code(text: str) -> tuple[str, list[str]]:
         return keep(m.group(0))
 
     text = _INLINE_CODE_RE.sub(inline_repl, text)
+
+    text = _INLINE_HTML_RE.sub(inline_repl, text)
+
+    def table_repl(m: re.Match[str]) -> str:
+        return f"{m.group(1)}{keep(m.group(2))}"
+
+    text = _TABLE_RE.sub(table_repl, text)
+
     return text, chunks
 
 
@@ -85,7 +99,14 @@ def _strip_think_blocks(text: str) -> str:
 
 def _normalize_whitespace(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"[ \t]+\n", "\n", text)
+
+    # Handle list indentation correctly by not stripping leading spaces on list lines
+    lines = text.split("\n")
+    cleaned_lines = []
+    for line in lines:
+        cleaned_lines.append(line.rstrip(" \t"))
+    text = "\n".join(cleaned_lines)
+
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = text.lstrip("\n")
     return text
